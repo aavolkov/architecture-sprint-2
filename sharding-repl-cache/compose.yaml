@@ -1,0 +1,178 @@
+name: sharding-repl-cache
+
+services:
+  # Configuration server
+  configsrv:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: configsrv
+    command: --configsvr --replSet configReplSet
+    ports:
+      - 27019:27019
+    networks:
+      - mongonet
+
+  # Shard 1 replicas
+  shard1-primary:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-primary
+    command: --shardsvr --replSet shard1ReplSet --port 27018
+    ports:
+      - 27018:27018
+    networks:
+      - mongonet
+
+  shard1-secondary1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-secondary1
+    command: --shardsvr --replSet shard1ReplSet --port 27028
+    ports:
+      - 27028:27028
+    networks:
+      - mongonet
+
+  shard1-secondary2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-secondary2
+    command: --shardsvr --replSet shard1ReplSet --port 27038
+    ports:
+      - 27038:27038
+    networks:
+      - mongonet
+
+  # Shard 2 replicas
+  shard2-primary:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-primary
+    command: --shardsvr --replSet shard2ReplSet --port 27020
+    ports:
+      - 27020:27020
+    networks:
+      - mongonet
+
+  shard2-secondary1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-secondary1
+    command: --shardsvr --replSet shard2ReplSet --port 27029
+    ports:
+      - 27029:27029
+    networks:
+      - mongonet
+
+  shard2-secondary2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-secondary2
+    command: --shardsvr --replSet shard2ReplSet --port 27039
+    ports:
+      - 27039:27039
+    networks:
+      - mongonet
+
+  # Mongos router
+  mongos:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: mongos
+    command: mongos --configdb configReplSet/configsrv:27019 --port 27017 --bind_ip_all
+    ports:
+      - 27017:27017
+    depends_on:
+      - configsrv
+      - shard1-primary
+      - shard2-primary
+    volumes:
+      - mongos_data_container:/data/db
+    networks:
+      - mongonet
+
+  # Redis Master
+  redis-master:
+    image: redis:latest
+    container_name: redis-master
+    command: redis-server --appendonly yes
+    ports:
+      - 6379:6379
+    networks:
+      - redisnet
+
+  # Redis Replica 1
+  redis-replica1:
+    image: redis:latest
+    container_name: redis-replica1
+    command: redis-server --appendonly yes --replicaof redis-master 6379
+    ports:
+      - 6380:6379
+    networks:
+      - redisnet
+
+  # Redis Replica 2
+  redis-replica2:
+    image: redis:latest
+    container_name: redis-replica2
+    command: redis-server --appendonly yes --replicaof redis-master 6379
+    ports:
+      - 6381:6379
+    networks:
+      - redisnet
+
+  # Redis Sentinel 1
+  redis-sentinel1:
+    image: redis:latest
+    container_name: redis-sentinel1
+    command: redis-sentinel /etc/sentinel/sentinel.conf
+    volumes:
+      - ./sentinel1.conf:/etc/sentinel/sentinel.conf
+    ports:
+      - 26379:26379
+    networks:
+      - redisnet
+
+  # Redis Sentinel 2
+  redis-sentinel2:
+    image: redis:latest
+    container_name: redis-sentinel2
+    command: redis-sentinel /etc/sentinel/sentinel.conf
+    volumes:
+      - ./sentinel2.conf:/etc/sentinel/sentinel.conf
+    ports:
+      - 26380:26379
+    networks:
+      - redisnet
+
+  # Redis Sentinel 3
+  redis-sentinel3:
+    image: redis:latest
+    container_name: redis-sentinel3
+    command: redis-sentinel /etc/sentinel/sentinel.conf
+    volumes:
+      - ./sentinel3.conf:/etc/sentinel/sentinel.conf
+    ports:
+      - 26381:26379
+    networks:
+      - redisnet
+
+  # Application API
+  pymongo_api:
+    container_name: pymongo_api
+    build:
+      context: api_app
+      dockerfile: Dockerfile
+    image: kazhem/pymongo_api:1.0.0
+    depends_on:
+      - mongos
+      - redis-master
+    ports:
+      - 8080:8080
+    environment:
+      MONGODB_URL: "mongodb://mongos:27017"
+      MONGODB_DATABASE_NAME: "db"
+      REDIS_URL: "redis://redis-master:6379"
+    networks:
+      - redisnet
+      - mongonet
+
+volumes:
+  mongos_data_container:
+
+networks:
+  mongonet:
+  redisnet:
+    driver: bridge

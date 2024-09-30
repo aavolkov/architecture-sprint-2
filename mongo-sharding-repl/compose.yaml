@@ -1,0 +1,84 @@
+services:
+  # Configuration server
+  configsrv:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: configsrv
+    command: --configsvr --replSet configReplSet
+    ports:
+      - 27019:27019
+
+  # Shard 1 replicas
+  shard1-primary:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-primary
+    command: --shardsvr --replSet shard1ReplSet --port 27018
+    ports:
+      - 27018:27018
+
+  shard1-secondary1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-secondary1
+    command: --shardsvr --replSet shard1ReplSet --port 27028
+    ports:
+      - 27028:27028
+
+  shard1-secondary2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard1-secondary2
+    command: --shardsvr --replSet shard1ReplSet --port 27038
+    ports:
+      - 27038:27038
+
+  # Shard 2 replicas
+  shard2-primary:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-primary
+    command: --shardsvr --replSet shard2ReplSet --port 27020
+    ports:
+      - 27020:27020
+
+  shard2-secondary1:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-secondary1
+    command: --shardsvr --replSet shard2ReplSet --port 27029
+    ports:
+      - 27029:27029
+
+  shard2-secondary2:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: shard2-secondary2
+    command: --shardsvr --replSet shard2ReplSet --port 27039
+    ports:
+      - 27039:27039
+
+  # Mongos router
+  mongos:
+    image: dh-mirror.gitverse.ru/mongo:latest
+    container_name: mongos
+    command: mongos --configdb configReplSet/configsrv:27019 --port 27017
+    ports:
+      - 27017:27017
+    depends_on:
+      - configsrv
+      - shard1-primary
+      - shard2-primary
+    volumes:
+      - mongos_data_container:/data/db
+
+  # Application API
+  pymongo_api:
+    container_name: pymongo_api
+    build:
+      context: api_app
+      dockerfile: Dockerfile
+    image: kazhem/pymongo_api:1.0.0
+    depends_on:
+      - mongos
+    ports:
+      - 8080:8080
+    environment:
+      MONGODB_URL: "mongodb://mongos"
+      MONGODB_DATABASE_NAME: "db"
+
+volumes:
+  mongos_data_container:
